@@ -18,7 +18,7 @@ export default async function handler(request, response) {
     return response.status(400).json({ error: 'No image data provided.' });
   }
 
-  const prompt = "Analyze this receipt image. Extract each line item with its price. Return a JSON array where each object has 'item' (string) and 'price' (number). Ignore taxes, tips, and totals. For example: [{\"item\": \"Burger\", \"price\": 12.50}, {\"item\": \"Fries\", \"price\": 4.00}]";
+  const prompt = "Analyze this receipt image. Extract each line item with its price, the subtotal (the total before tax), and the tax amount. Return a JSON object with three keys: 'items' (an array of objects with 'item' and 'price'), 'subtotal' (a number), and 'tax' (a number). For example: {\"items\": [{\"item\": \"Burger\", \"price\": 12.50}], \"subtotal\": 12.50, \"tax\": 1.03}";
 
   const payload = {
     contents: [{
@@ -31,15 +31,23 @@ export default async function handler(request, response) {
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: {
-            item: { type: "STRING" },
-            price: { type: "NUMBER" }
+        type: "OBJECT",
+        properties: {
+          "items": {
+            "type": "ARRAY",
+            "items": {
+              "type": "OBJECT",
+              "properties": {
+                "item": { "type": "STRING" },
+                "price": { "type": "NUMBER" }
+              },
+              "required": ["item", "price"]
+            }
           },
-          required: ["item", "price"]
-        }
+          "subtotal": { "type": "NUMBER" },
+          "tax": { "type": "NUMBER" }
+        },
+        "required": ["items", "subtotal", "tax"]
       }
     }
   };
