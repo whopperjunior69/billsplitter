@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bill Splitter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .droppable {
+            transition: background-color 0.2s ease-in-out;
+        }
+        .droppable.drag-over {
+            background-color: #e0f2fe; /* light-blue-100 */
+        }
+        .draggable-item {
+            cursor: grab;
+        }
+        .draggable-item:active {
+            cursor: grabbing;
+        }
+        .person-box {
+            min-height: 100px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 50;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            -webkit-animation-name: fadeIn;
+            animation-name: fadeIn;
+            -webkit-animation-duration: 0.3s;
+            animation-duration: 0.3s;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 24px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+            -webkit-animation-name: slideIn;
+            animation-name: slideIn;
+            -webkit-animation-duration: 0.3s;
+            animation-duration: 0.3s;
+        }
+        @-webkit-keyframes fadeIn { from {opacity: 0} to {opacity: 1} }
+        @keyframes fadeIn { from {opacity: 0} to {opacity: 1} }
+        @-webkit-keyframes slideIn { from {transform: translateY(-50px)} to {transform: translateY(0)} }
+        @keyframes slideIn { from {transform: translateY(-50px)} to {transform: translateY(0)} }
+        
+        .toggle-btn.active {
+            background-color: white;
+            color: #3b82f6; /* blue-600 */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Snap & Split</h1>
+            <p class="text-lg text-gray-600 mt-2">Upload a receipt, assign items, and split the bill with ease.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+            <!-- Left Column: Receipt & Items -->
+            <div class="lg:col-span-4 bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">1. Your Receipt</h2>
+                <div>
+                    <label for="receipt-upload" class="w-full inline-block text-center bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">
+                        Choose Receipt Image
+                    </label>
+                    <input type="file" id="receipt-upload" accept="image/*" class="hidden">
+                    <p id="file-name-display" class="text-sm text-gray-500 mt-2 text-center truncate"></p>
+                </div>
+                <div id="receipt-preview-container" class="mt-4 hidden">
+                     <img id="receipt-preview" src="#" alt="Receipt Preview" class="max-w-full rounded-lg shadow-sm">
+                </div>
+                <button id="process-receipt-btn" class="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors">
+                    <span id="process-btn-text">Process Receipt</span>
+                    <span id="process-spinner" class="hidden"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Processing...</span>
+                </button>
+                <hr class="my-6">
+                <h3 class="text-xl font-semibold mb-3">Detected Items</h3>
+                <p id="items-instruction" class="text-sm text-gray-500 mb-4">Drag items to a person's box or click 'Split'.</p>
+                <div id="items-list" class="space-y-2">
+                    <p class="text-gray-400">Items from your receipt will appear here after processing.</p>
+                </div>
+            </div>
+
+            <!-- Right Column: People & Calculation -->
+            <div class="lg:col-span-8">
+                <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+                    <h2 class="text-2xl font-semibold mb-4">2. Add People</h2>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <input type="text" id="person-name-input" placeholder="Enter a name" class="flex-grow px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <button id="add-person-btn" class="bg-green-500 text-white py-2 px-6 rounded-lg hover:bg-green-600 transition-colors">Add Person</button>
+                    </div>
+                </div>
+                <div id="people-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"></div>
+                <div class="bg-white p-6 rounded-xl shadow-md mt-8">
+                    <h2 class="text-2xl font-semibold mb-4">3. Calculate Totals</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label for="tax-input" class="block text-sm font-medium text-gray-700">Tax</label>
+                                <div class="flex items-center rounded-lg bg-gray-200 p-1 text-xs font-semibold text-gray-500">
+                                    <button id="tax-type-percent" class="toggle-btn active px-3 py-1 rounded-md" data-type="percent">%</button>
+                                    <button id="tax-type-dollar" class="toggle-btn px-3 py-1 rounded-md" data-type="dollar">$</button>
+                                </div>
+                            </div>
+                            <input type="number" id="tax-input" placeholder="e.g., 8.25" value="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                             <div class="flex items-center justify-between mb-1">
+                                <label for="tip-input" class="block text-sm font-medium text-gray-700">Tip</label>
+                                <div class="flex items-center rounded-lg bg-gray-200 p-1 text-xs font-semibold text-gray-500">
+                                    <button id="tip-type-percent" class="toggle-btn active px-3 py-1 rounded-md" data-type="percent">%</button>
+                                    <button id="tip-type-dollar" class="toggle-btn px-3 py-1 rounded-md" data-type="dollar">$</button>
+                                </div>
+                            </div>
+                            <input type="number" id="tip-input" placeholder="e.g., 18" value="18" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                    <button id="calculate-btn" class="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors text-lg font-semibold">Calculate Final Split</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="results-modal" class="modal"><div class="modal-content"><div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold">Final Split</h2><button class="close-modal-btn text-gray-500 hover:text-gray-800 text-3xl font-light">&times;</button></div><div id="results-content" class="space-y-4"></div></div></div>
+    <div id="split-item-modal" class="modal"><div class="modal-content"><div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold">Split Item</h2><button class="close-modal-btn text-gray-500 hover:text-gray-800 text-3xl font-light">&times;</button></div><div id="split-item-content"></div></div></div>
+    <div id="alert-modal" class="modal"><div class="modal-content"><h2 id="alert-title" class="text-xl font-bold mb-4">Notification</h2><p id="alert-message" class="mb-6"></p><div class="text-right"><button id="alert-ok-btn" class="bg-blue-600 text-white py-2 px-6 rounded-lg hover:bg-blue-700">OK</button></div></div></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Element selectors
+        const receiptUpload = document.getElementById('receipt-upload');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        const receiptPreview = document.getElementById('receipt-preview');
+        const receiptPreviewContainer = document.getElementById('receipt-preview-container');
+        const processReceiptBtn = document.getElementById('process-receipt-btn');
+        const processBtnText = document.getElementById('process-btn-text');
+        const processSpinner = document.getElementById('process-spinner');
+        const itemsList = document.getElementById('items-list');
+        const personNameInput = document.getElementById('person-name-input');
+        const addPersonBtn = document.getElementById('add-person-btn');
+        const peopleContainer = document.getElementById('people-container');
+        const taxInput = document.getElementById('tax-input');
+        const tipInput = document.getElementById('tip-input');
+        const calculateBtn = document.getElementById('calculate-btn');
+
+        // Modals
+        const resultsModal = document.getElementById('results-modal');
+        const splitItemModal = document.getElementById('split-item-modal');
+        const alertModal = document.getElementById('alert-modal');
+
+        // State variables
+        let people = {};
+        let receiptItems = [];
+        let base64ImageData = null;
+        let nextItemId = 0;
+        let taxInputType = 'percent';
+        let tipInputType = 'percent';
+
+        // --- Custom Alert ---
+        function showAlert(message, title = 'Notification') {
+            document.getElementById('alert-title').textContent = title;
+            document.getElementById('alert-message').textContent = message;
+            alertModal.style.display = 'flex';
+        }
+        document.getElementById('alert-ok-btn').addEventListener('click', () => alertModal.style.display = 'none');
+
+        // --- Input Type Toggles ---
+        function setupToggle(percentBtnId, dollarBtnId, inputEl, typeVarSetter, placeholders) {
+            const percentBtn = document.getElementById(percentBtnId);
+            const dollarBtn = document.getElementById(dollarBtnId);
+            percentBtn.addEventListener('click', () => {
+                typeVarSetter('percent');
+                percentBtn.classList.add('active');
+                dollarBtn.classList.remove('active');
+                inputEl.placeholder = placeholders.percent;
+                inputEl.value = '';
+            });
+            dollarBtn.addEventListener('click', () => {
+                typeVarSetter('dollar');
+                dollarBtn.classList.add('active');
+                percentBtn.classList.remove('active');
+                inputEl.placeholder = placeholders.dollar;
+                inputEl.value = '';
+            });
+        }
+        setupToggle('tax-type-percent', 'tax-type-dollar', taxInput, (type) => taxInputType = type, { percent: 'e.g., 8.25', dollar: 'e.g., 15.50' });
+        setupToggle('tip-type-percent', 'tip-type-dollar', tipInput, (type) => tipInputType = type, { percent: 'e.g., 18', dollar: 'e.g., 25.00' });
+
+
+        // --- Image Handling ---
+        receiptUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    receiptPreview.src = e.target.result;
+                    receiptPreviewContainer.classList.remove('hidden');
+                    base64ImageData = e.target.result.split(',')[1];
+                    processReceiptBtn.disabled = false;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // --- OCR and Item Parsing ---
+        processReceiptBtn.addEventListener('click', async () => {
+            if (!base64ImageData) {
+                showAlert('Please upload a receipt image first.');
+                return;
+            }
+            toggleProcessing(true);
+            try {
+                const prompt = "Analyze this receipt image. Extract each line item with its price. Return a JSON array where each object has 'item' (string) and 'price' (number). Ignore taxes, tips, and totals. For example: [{\"item\": \"Burger\", \"price\": 12.50}, {\"item\": \"Fries\", \"price\": 4.00}]";
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }] }], generationConfig: { responseMimeType: "application/json", responseSchema: { type: "ARRAY", items: { type: "OBJECT", properties: { item: { type: "STRING" }, price: { type: "NUMBER" } }, required: ["item", "price"] } } } };
+                const apiKey = ""; // Provided by environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+                const result = await response.json();
+                if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
+                    const parsedJson = JSON.parse(result.candidates[0].content.parts[0].text);
+                    receiptItems = parsedJson.map(item => ({ ...item, id: `item-${nextItemId++}` }));
+                    displayItems();
+                } else {
+                    throw new Error('Could not parse items from the receipt.');
+                }
+            } catch (error) {
+                console.error('Error processing receipt:', error);
+                itemsList.innerHTML = `<p class="text-red-500">Error: Could not process the receipt. Please try another image.</p>`;
+            } finally {
+                toggleProcessing(false);
+            }
+        });
+
+        function toggleProcessing(isProcessing) {
+            processReceiptBtn.disabled = isProcessing;
+            processBtnText.classList.toggle('hidden', isProcessing);
+            processSpinner.classList.toggle('hidden', !isProcessing);
+        }
+
+        function displayItems() {
+            itemsList.innerHTML = '';
+            if (receiptItems.length === 0) {
+                itemsList.innerHTML = `<p class="text-gray-400">No items detected or all items have been assigned.</p>`;
+                return;
+            }
+            receiptItems.forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.id = item.id;
+                itemEl.className = 'draggable-item bg-gray-100 p-3 rounded-lg flex justify-between items-center shadow-sm';
+                itemEl.draggable = true;
+                itemEl.innerHTML = `
+                    <div class="flex-grow">
+                        <span>${item.item}</span>
+                        <span class="font-semibold text-gray-700 ml-2">$${item.price.toFixed(2)}</span>
+                    </div>
+                    <button class="split-item-btn bg-yellow-400 text-yellow-800 text-xs font-bold py-1 px-2 rounded-full hover:bg-yellow-500 ml-2">Split</button>
+                `;
+                itemEl.addEventListener('dragstart', handleDragStart);
+                itemEl.querySelector('.split-item-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openSplitModal(item.id);
+                });
+                itemsList.appendChild(itemEl);
+            });
+        }
+
+        // --- Item Splitting ---
+        function openSplitModal(itemId) {
+            const itemToSplit = receiptItems.find(i => i.id === itemId);
+            if (!itemToSplit) return;
+            const names = Object.keys(people);
+            if (names.length < 2) {
+                showAlert('You need at least two people to split an item.');
+                return;
+            }
+            const contentEl = document.getElementById('split-item-content');
+            contentEl.innerHTML = `
+                <p class="mb-4">Select who is sharing the <strong>${itemToSplit.item}</strong> ($${itemToSplit.price.toFixed(2)}).</p>
+                <div id="split-people-list" class="space-y-2 mb-6">
+                    ${names.map(name => `<label class="flex items-center bg-gray-50 p-3 rounded-lg hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300" data-name="${name}"><span class="ml-3 text-lg">${name}</span></label>`).join('')}
+                </div>
+                <div class="text-right"><button id="confirm-split-btn" class="bg-green-500 text-white py-2 px-6 rounded-lg hover:bg-green-600">Confirm Split</button></div>`;
+            document.getElementById('confirm-split-btn').addEventListener('click', () => confirmSplit(itemId));
+            splitItemModal.style.display = 'flex';
+        }
+
+        function confirmSplit(itemId) {
+            const selectedCheckboxes = document.querySelectorAll('#split-people-list input:checked');
+            const selectedPeople = Array.from(selectedCheckboxes).map(cb => cb.dataset.name);
+            if (selectedPeople.length < 2) {
+                showAlert('Please select at least two people to split the item.');
+                return;
+            }
+            const itemIndex = receiptItems.findIndex(i => i.id === itemId);
+            if (itemIndex === -1) return;
+            const [originalItem] = receiptItems.splice(itemIndex, 1);
+            const splitPrice = originalItem.price / selectedPeople.length;
+            selectedPeople.forEach(name => {
+                people[name].items.push({ id: `item-${nextItemId++}`, item: `${originalItem.item} (split)`, price: splitPrice });
+            });
+            displayItems();
+            renderPeople();
+            splitItemModal.style.display = 'none';
+        }
+
+        // --- People Management ---
+        addPersonBtn.addEventListener('click', addPerson);
+        personNameInput.addEventListener('keyup', (e) => e.key === 'Enter' && addPerson());
+
+        function addPerson() {
+            const name = personNameInput.value.trim();
+            if (name && !people[name]) {
+                people[name] = { items: [] };
+                renderPeople();
+                personNameInput.value = '';
+                personNameInput.focus();
+            } else if (people[name]) {
+                showAlert('This person has already been added.');
+            }
+        }
+
+        function renderPeople() {
+            peopleContainer.innerHTML = '';
+            Object.keys(people).forEach(name => {
+                const personBox = document.createElement('div');
+                personBox.className = 'droppable bg-white p-4 rounded-xl shadow-md person-box';
+                personBox.dataset.personName = name;
+                personBox.innerHTML = `
+                    <div class="flex justify-between items-center mb-3"><h3 class="text-xl font-bold text-gray-800">${name}</h3><button class="remove-person-btn text-red-400 hover:text-red-600 font-bold text-2xl" data-name="${name}">&times;</button></div>
+                    <div class="assigned-items space-y-2 min-h-[50px]">${renderPersonItems(name)}</div>
+                    <div class="text-right mt-4 font-bold text-lg text-blue-600">Subtotal: $<span id="subtotal-${name.replace(/\s+/g, '-')}">0.00</span></div>`;
+                peopleContainer.appendChild(personBox);
+            });
+            addDroppableListeners();
+            addRemovePersonListeners();
+            calculateAllSubtotals();
+        }
+
+        function renderPersonItems(name) {
+            const personData = people[name];
+            if (personData.items.length === 0) return '<p class="text-sm text-gray-400">Drop items here</p>';
+            return personData.items.map(item => `<div class="assigned-item bg-blue-50 p-2 rounded-md flex justify-between items-center text-sm"><span>${item.item}</span><span class="font-medium">$${item.price.toFixed(2)}</span></div>`).join('');
+        }
+
+        function addRemovePersonListeners() {
+            document.querySelectorAll('.remove-person-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const nameToRemove = e.target.dataset.name;
+                    people[nameToRemove].items.forEach(item => receiptItems.push(item));
+                    delete people[nameToRemove];
+                    displayItems();
+                    renderPeople();
+                });
+            });
+        }
+
+        // --- Drag and Drop ---
+        function handleDragStart(e) {
+            e.dataTransfer.setData('text/plain', e.target.id);
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function addDroppableListeners() {
+            document.querySelectorAll('.droppable').forEach(box => {
+                box.addEventListener('dragover', (e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); });
+                box.addEventListener('dragleave', (e) => e.currentTarget.classList.remove('drag-over'));
+                box.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('drag-over');
+                    const itemId = e.dataTransfer.getData('text/plain');
+                    const personName = e.currentTarget.dataset.personName;
+                    const itemIndex = receiptItems.findIndex(item => item.id === itemId);
+                    if (itemIndex > -1 && personName) {
+                        const [movedItem] = receiptItems.splice(itemIndex, 1);
+                        people[personName].items.push(movedItem);
+                        document.getElementById(itemId)?.remove();
+                        renderPeople();
+                    }
+                });
+            });
+        }
+
+        // --- Calculation ---
+        function calculateAllSubtotals() {
+            Object.keys(people).forEach(name => {
+                const subtotal = people[name].items.reduce((sum, item) => sum + item.price, 0);
+                const sanitizedName = name.replace(/\s+/g, '-');
+                const subtotalEl = document.getElementById(`subtotal-${sanitizedName}`);
+                if(subtotalEl) subtotalEl.textContent = subtotal.toFixed(2);
+            });
+        }
+
+        calculateBtn.addEventListener('click', () => {
+             const totalBill = Object.values(people).flatMap(p => p.items).reduce((sum, item) => sum + item.price, 0);
+             if (totalBill === 0) {
+                showAlert('Please assign items to people before calculating the split.');
+                return;
+            }
+            calculateFinalSplit();
+        });
+
+        function calculateFinalSplit() {
+            const totalSubtotal = Object.values(people).flatMap(p => p.items).reduce((sum, item) => sum + item.price, 0);
+            
+            let totalTaxAmount, totalTipAmount;
+
+            if (taxInputType === 'percent') {
+                const taxRate = parseFloat(taxInput.value) / 100 || 0;
+                totalTaxAmount = totalSubtotal * taxRate;
+            } else {
+                totalTaxAmount = parseFloat(taxInput.value) || 0;
+            }
+
+            if (tipInputType === 'percent') {
+                const tipRate = parseFloat(tipInput.value) / 100 || 0;
+                totalTipAmount = totalSubtotal * tipRate;
+            } else {
+                totalTipAmount = parseFloat(tipInput.value) || 0;
+            }
+            
+            let resultsHTML = '';
+            let grandTotal = 0;
+
+            Object.keys(people).forEach(name => {
+                const personSubtotal = people[name].items.reduce((sum, item) => sum + item.price, 0);
+                if (personSubtotal === 0) return;
+                
+                const personShareOfBill = totalSubtotal > 0 ? personSubtotal / totalSubtotal : 0;
+                const personTax = totalTaxAmount * personShareOfBill;
+                const personTip = totalTipAmount * personShareOfBill;
+                const personTotal = personSubtotal + personTax + personTip;
+                grandTotal += personTotal;
+
+                resultsHTML += `
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h4 class="font-bold text-lg">${name}</h4>
+                        <div class="flex justify-between border-b py-1"><span>Subtotal:</span><span>$${personSubtotal.toFixed(2)}</span></div>
+                        <div class="flex justify-between border-b py-1"><span>Tax Share:</span><span>$${personTax.toFixed(2)}</span></div>
+                        <div class="flex justify-between border-b py-1"><span>Tip Share:</span><span>$${personTip.toFixed(2)}</span></div>
+                        <div class="flex justify-between font-bold text-indigo-700 pt-2 text-lg"><span>Total:</span><span>$${personTotal.toFixed(2)}</span></div>
+                    </div>`;
+            });
+
+            resultsHTML += `
+                <hr class="my-4">
+                <div class="bg-indigo-50 p-4 rounded-lg font-semibold">
+                    <div class="flex justify-between"><span>Total Subtotal:</span><span>$${totalSubtotal.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Total Tax:</span><span>$${totalTaxAmount.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Total Tip:</span><span>$${totalTipAmount.toFixed(2)}</span></div>
+                    <div class="flex justify-between text-xl font-bold mt-2 text-indigo-800"><span>Grand Total:</span><span>$${grandTotal.toFixed(2)}</span></div>
+                </div>`;
+
+            document.getElementById('results-content').innerHTML = resultsHTML;
+            resultsModal.style.display = 'flex';
+        }
+
+        // --- Modal Closing Logic ---
+        document.querySelectorAll('.close-modal-btn').forEach(btn => btn.addEventListener('click', (e) => {
+            e.target.closest('.modal').style.display = 'none';
+        }));
+        window.addEventListener('click', (event) => {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        });
+
+        // Initial render
+        renderPeople();
+    });
+    </script>
+</body>
+</html>
