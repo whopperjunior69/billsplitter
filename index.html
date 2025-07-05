@@ -104,7 +104,7 @@
                 </div>
                  <hr class="my-6">
                 <h3 class="text-xl font-semibold mb-3">Bill Items</h3>
-                <p id="items-instruction" class="text-sm text-gray-500 mb-4">Drag items to a person's box or click 'Split'.</p>
+                <p id="items-instruction" class="text-sm text-gray-500 mb-4">Drag items or tap "Assign".</p>
                 <div id="items-list" class="space-y-2">
                     <p class="text-gray-400">Items you add will appear here.</p>
                 </div>
@@ -152,7 +152,7 @@
 
     <!-- Modals -->
     <div id="results-modal" class="modal"><div class="modal-content"><div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold">Final Split</h2><button class="close-modal-btn text-gray-500 hover:text-gray-800 text-3xl font-light">&times;</button></div><div id="results-content" class="space-y-4"></div></div></div>
-    <div id="split-item-modal" class="modal"><div class="modal-content"><div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold">Split Item</h2><button class="close-modal-btn text-gray-500 hover:text-gray-800 text-3xl font-light">&times;</button></div><div id="split-item-content"></div></div></div>
+    <div id="assign-item-modal" class="modal"><div class="modal-content"><div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold">Assign or Split Item</h2><button class="close-modal-btn text-gray-500 hover:text-gray-800 text-3xl font-light">&times;</button></div><div id="assign-item-content"></div></div></div>
     <div id="alert-modal" class="modal"><div class="modal-content"><h2 id="alert-title" class="text-xl font-bold mb-4">Notification</h2><p id="alert-message" class="mb-6"></p><div class="text-right"><button id="alert-ok-btn" class="bg-blue-600 text-white py-2 px-6 rounded-lg hover:bg-blue-700">OK</button></div></div></div>
 
     <script>
@@ -178,7 +178,7 @@
 
         // Modals
         const resultsModal = document.getElementById('results-modal');
-        const splitItemModal = document.getElementById('split-item-modal');
+        const assignItemModal = document.getElementById('assign-item-modal');
         const alertModal = document.getElementById('alert-modal');
 
         // State variables
@@ -249,8 +249,18 @@
                 reader.onload = (e) => {
                     receiptPreview.src = e.target.result;
                     receiptPreviewContainer.classList.remove('hidden');
-                    base64ImageData = e.target.result.split(',')[1];
-                    processReceiptBtn.disabled = false;
+                    
+                    const base64Marker = 'base64,';
+                    const base64Index = e.target.result.indexOf(base64Marker);
+                    
+                    if (base64Index > -1) {
+                        base64ImageData = e.target.result.substring(base64Index + base64Marker.length);
+                        processReceiptBtn.disabled = false;
+                    } else {
+                        showAlert('Could not read the image file. Please try a different image.');
+                        base64ImageData = null;
+                        processReceiptBtn.disabled = true;
+                    }
                 };
                 reader.readAsDataURL(file);
             }
@@ -264,8 +274,6 @@
             }
             toggleProcessing(true);
             try {
-                // This URL points to the serverless function.
-                // On Vercel/Netlify, this will be the endpoint for your function.
                 const apiUrl = '/api/process-receipt'; 
                 
                 const response = await fetch(apiUrl, {
@@ -311,61 +319,84 @@
             receiptItems.forEach(item => {
                 const itemEl = document.createElement('div');
                 itemEl.id = item.id;
-                itemEl.className = 'draggable-item bg-gray-100 p-3 rounded-lg flex justify-between items-center shadow-sm';
+                itemEl.className = 'draggable-item bg-gray-100 p-2 rounded-lg flex justify-between items-center shadow-sm';
                 itemEl.draggable = true;
                 itemEl.innerHTML = `
-                    <div class="flex-grow">
+                    <div class="flex-grow pr-2">
                         <span>${item.item}</span>
                         <span class="font-semibold text-gray-700 ml-2">$${item.price.toFixed(2)}</span>
                     </div>
-                    <button class="split-item-btn bg-yellow-400 text-yellow-800 text-xs font-bold py-1 px-2 rounded-full hover:bg-yellow-500 ml-2">Split</button>
+                    <div class="flex-shrink-0">
+                        <button class="assign-item-btn bg-blue-500 text-white text-xs font-bold py-1 px-3 rounded-full hover:bg-blue-600">Assign</button>
+                    </div>
                 `;
                 itemEl.addEventListener('dragstart', handleDragStart);
-                itemEl.querySelector('.split-item-btn').addEventListener('click', (e) => {
+                itemEl.querySelector('.assign-item-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
-                    openSplitModal(item.id);
+                    openAssignModal(item.id);
                 });
                 itemsList.appendChild(itemEl);
             });
         }
 
-        // --- Item Splitting ---
-        function openSplitModal(itemId) {
-            const itemToSplit = receiptItems.find(i => i.id === itemId);
-            if (!itemToSplit) return;
+        // --- Item Assignment / Splitting ---
+        function openAssignModal(itemId) {
+            const itemToAssign = receiptItems.find(i => i.id === itemId);
+            if (!itemToAssign) return;
+
             const names = Object.keys(people);
-            if (names.length < 2) {
-                showAlert('You need at least two people to split an item.');
+            if (names.length === 0) {
+                showAlert('Please add at least one person before assigning an item.');
                 return;
             }
-            const contentEl = document.getElementById('split-item-content');
+
+            const contentEl = document.getElementById('assign-item-content');
             contentEl.innerHTML = `
-                <p class="mb-4">Select who is sharing the <strong>${itemToSplit.item}</strong> ($${itemToSplit.price.toFixed(2)}).</p>
-                <div id="split-people-list" class="space-y-2 mb-6">
-                    ${names.map(name => `<label class="flex items-center bg-gray-50 p-3 rounded-lg hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300" data-name="${name}"><span class="ml-3 text-lg">${name}</span></label>`).join('')}
+                <p class="mb-4">Who is paying for <strong>${itemToAssign.item}</strong> ($${itemToAssign.price.toFixed(2)})?</p>
+                <div id="assign-people-list" class="space-y-2 mb-6">
+                    ${names.map(name => `
+                        <label class="flex items-center bg-gray-50 p-3 rounded-lg hover:bg-gray-100 cursor-pointer">
+                            <input type="checkbox" class="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300" data-name="${name}">
+                            <span class="ml-3 text-lg">${name}</span>
+                        </label>
+                    `).join('')}
                 </div>
-                <div class="text-right"><button id="confirm-split-btn" class="bg-green-500 text-white py-2 px-6 rounded-lg hover:bg-green-600">Confirm Split</button></div>`;
-            document.getElementById('confirm-split-btn').addEventListener('click', () => confirmSplit(itemId));
-            splitItemModal.style.display = 'flex';
+                <div class="text-right">
+                    <button id="confirm-assign-btn" class="bg-green-500 text-white py-2 px-6 rounded-lg hover:bg-green-600">Confirm</button>
+                </div>
+            `;
+            
+            document.getElementById('confirm-assign-btn').addEventListener('click', () => confirmAssignment(itemId));
+            assignItemModal.style.display = 'flex';
         }
 
-        function confirmSplit(itemId) {
-            const selectedCheckboxes = document.querySelectorAll('#split-people-list input:checked');
+        function confirmAssignment(itemId) {
+            const selectedCheckboxes = document.querySelectorAll('#assign-people-list input:checked');
             const selectedPeople = Array.from(selectedCheckboxes).map(cb => cb.dataset.name);
-            if (selectedPeople.length < 2) {
-                showAlert('Please select at least two people to split the item.');
+
+            if (selectedPeople.length === 0) {
+                showAlert('Please select at least one person.');
                 return;
             }
+
             const itemIndex = receiptItems.findIndex(i => i.id === itemId);
             if (itemIndex === -1) return;
+
             const [originalItem] = receiptItems.splice(itemIndex, 1);
             const splitPrice = originalItem.price / selectedPeople.length;
+            const itemName = selectedPeople.length > 1 ? `${originalItem.item} (split)` : originalItem.item;
+
             selectedPeople.forEach(name => {
-                people[name].items.push({ id: `item-${nextItemId++}`, item: `${originalItem.item} (split)`, price: splitPrice });
+                people[name].items.push({
+                    id: `item-${nextItemId++}`,
+                    item: itemName,
+                    price: splitPrice
+                });
             });
+
             displayItems();
             renderPeople();
-            splitItemModal.style.display = 'none';
+            assignItemModal.style.display = 'none';
         }
 
         // --- People Management ---
@@ -412,7 +443,6 @@
                 btn.addEventListener('click', (e) => {
                     const nameToRemove = e.target.dataset.name;
                     people[nameToRemove].items.forEach(item => {
-                        // Don't add split items back to the main list
                         if (!item.item.includes('(split)')) {
                             receiptItems.push(item)
                         }
@@ -443,8 +473,8 @@
                     if (itemIndex > -1 && personName) {
                         const [movedItem] = receiptItems.splice(itemIndex, 1);
                         people[personName].items.push(movedItem);
-                        document.getElementById(itemId)?.remove();
                         renderPeople();
+                        displayItems();
                     }
                 });
             });
