@@ -285,9 +285,15 @@
                     body: JSON.stringify({ imageData: base64ImageData })
                 });
 
+                // **FIX:** More robust error handling
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `Server responded with status: ${response.status}`);
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || `Server error: ${response.status}`);
+                    } else {
+                        throw new Error(`The server had an unexpected problem (status: ${response.status}). This can happen with large images from a mobile device. Please try a smaller image or add items manually.`);
+                    }
                 }
                 
                 const data = await response.json();
@@ -323,7 +329,7 @@
 
             } catch (error) {
                 console.error('Error processing receipt:', error);
-                showAlert(`Error: Could not process the receipt. ${error.message}. Please try another image or add items manually.`);
+                showAlert(`Error: Could not process the receipt. ${error.message}`);
             } finally {
                 toggleProcessing(false);
             }
