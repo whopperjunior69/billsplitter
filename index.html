@@ -242,31 +242,70 @@
         setupToggle(document.getElementById('tip-type-percent'), document.getElementById('tip-type-dollar'), tipInput, (type) => tipInputType = type, { percent: 'e.g., 18', dollar: 'e.g., 25.00' });
 
 
-        // --- Image Handling ---
+        // --- Image Handling & Resizing ---
         receiptUpload.addEventListener('change', (event) => {
             const file = event.target.files[0];
-            if (file) {
-                fileNameDisplay.textContent = file.name;
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    receiptPreview.src = e.target.result;
-                    receiptPreviewContainer.classList.remove('hidden');
-                    
-                    const base64Marker = 'base64,';
-                    const base64Index = e.target.result.indexOf(base64Marker);
-                    
-                    if (base64Index > -1) {
-                        base64ImageData = e.target.result.substring(base64Index + base64Marker.length);
-                        processReceiptBtn.disabled = false;
-                    } else {
-                        showAlert('Could not read the image file. Please try a different image.');
-                        base64ImageData = null;
-                        processReceiptBtn.disabled = true;
-                    }
-                };
-                reader.readAsDataURL(file);
+            if (!file) {
+                return;
             }
+
+            fileNameDisplay.textContent = file.name;
+            
+            // **FIX:** Resize image before processing
+            resizeImage(file, (dataUrl) => {
+                receiptPreview.src = dataUrl;
+                receiptPreviewContainer.classList.remove('hidden');
+
+                const base64Marker = 'base64,';
+                const base64Index = dataUrl.indexOf(base64Marker);
+
+                if (base64Index > -1) {
+                    base64ImageData = dataUrl.substring(base64Index + base64Marker.length);
+                    processReceiptBtn.disabled = false;
+                } else {
+                    showAlert('Could not read the image file. Please try a different image.');
+                    base64ImageData = null;
+                    processReceiptBtn.disabled = true;
+                }
+            });
         });
+        
+        function resizeImage(file, callback) {
+            const MAX_WIDTH = 1024;
+            const MAX_HEIGHT = 1024;
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Get the data URL for the resized image
+                    callback(canvas.toDataURL('image/jpeg', 0.9)); // Use JPEG for smaller size
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
 
         // --- OCR and Item Parsing ---
         processReceiptBtn.addEventListener('click', async () => {
@@ -285,14 +324,13 @@
                     body: JSON.stringify({ imageData: base64ImageData })
                 });
 
-                // **FIX:** More robust error handling
                 if (!response.ok) {
                     const contentType = response.headers.get("content-type");
                     if (contentType && contentType.indexOf("application/json") !== -1) {
                         const errorData = await response.json();
                         throw new Error(errorData.error || `Server error: ${response.status}`);
                     } else {
-                        throw new Error(`The server had an unexpected problem (status: ${response.status}). This can happen with large images from a mobile device. Please try a smaller image or add items manually.`);
+                        throw new Error(`The server had an unexpected problem (status: ${response.status}). This can happen if the server times out. Please try again, use a smaller image, or add items manually.`);
                     }
                 }
                 
@@ -301,17 +339,15 @@
                 if (data && Array.isArray(data.items) && typeof data.subtotal === 'number') {
                     receiptItems.push(...data.items.map(item => ({ ...item, id: `item-${nextItemId++}` })));
                     
-                    // Auto-populate tax
                     if (typeof data.tax === 'number' && data.tax > 0) {
                         taxInput.value = data.tax.toFixed(2);
-                        taxTypeDollarBtn.click(); // Programmatically switch to dollar mode
+                        taxTypeDollarBtn.click();
                     }
 
-                    // Smart Reconciliation
                     const itemsSum = data.items.reduce((sum, item) => sum + item.price, 0);
                     const difference = data.subtotal - itemsSum;
 
-                    if (Math.abs(difference) > 0.05) { // Threshold for discrepancy
+                    if (Math.abs(difference) > 0.05) {
                         receiptItems.push({
                             id: `item-${nextItemId++}`,
                             item: 'Unrecognized Item',
