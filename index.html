@@ -104,7 +104,6 @@
                 </div>
                  <hr class="my-6">
                 <h3 class="text-xl font-semibold mb-3">Bill Items</h3>
-                <div id="reconciliation-notice" class="hidden bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 rounded-r-lg"></div>
                 <p id="items-instruction" class="text-sm text-gray-500 mb-4">Drag items or tap "Assign".</p>
                 <div id="items-list" class="space-y-2">
                     <p class="text-gray-400">Items you add will appear here.</p>
@@ -176,9 +175,6 @@
         const manualItemName = document.getElementById('manual-item-name');
         const manualItemPrice = document.getElementById('manual-item-price');
         const addManualItemBtn = document.getElementById('add-manual-item-btn');
-        const reconciliationNotice = document.getElementById('reconciliation-notice');
-        const taxTypeDollarBtn = document.getElementById('tax-type-dollar');
-        const taxTypePercentBtn = document.getElementById('tax-type-percent');
 
         // Modals
         const resultsModal = document.getElementById('results-modal');
@@ -222,7 +218,9 @@
         });
 
         // --- Input Type Toggles ---
-        function setupToggle(percentBtn, dollarBtn, inputEl, typeVarSetter, placeholders) {
+        function setupToggle(percentBtnId, dollarBtnId, inputEl, typeVarSetter, placeholders) {
+            const percentBtn = document.getElementById(percentBtnId);
+            const dollarBtn = document.getElementById(dollarBtnId);
             percentBtn.addEventListener('click', () => {
                 typeVarSetter('percent');
                 percentBtn.classList.add('active');
@@ -238,8 +236,8 @@
                 inputEl.value = '';
             });
         }
-        setupToggle(taxTypePercentBtn, taxTypeDollarBtn, taxInput, (type) => taxInputType = type, { percent: 'e.g., 8.25', dollar: 'e.g., 15.50' });
-        setupToggle(document.getElementById('tip-type-percent'), document.getElementById('tip-type-dollar'), tipInput, (type) => tipInputType = type, { percent: 'e.g., 18', dollar: 'e.g., 25.00' });
+        setupToggle('tax-type-percent', 'tax-type-dollar', taxInput, (type) => taxInputType = type, { percent: 'e.g., 8.25', dollar: 'e.g., 15.50' });
+        setupToggle('tip-type-percent', 'tip-type-dollar', tipInput, (type) => tipInputType = type, { percent: 'e.g., 18', dollar: 'e.g., 25.00' });
 
 
         // --- Image Handling ---
@@ -275,7 +273,6 @@
                 return;
             }
             toggleProcessing(true);
-            reconciliationNotice.classList.add('hidden');
             try {
                 const apiUrl = '/api/process-receipt'; 
                 
@@ -290,32 +287,10 @@
                     throw new Error(errorData.error || `Server responded with status: ${response.status}`);
                 }
                 
-                const data = await response.json();
+                const parsedJson = await response.json();
                 
-                if (data && Array.isArray(data.items) && typeof data.subtotal === 'number') {
-                    receiptItems.push(...data.items.map(item => ({ ...item, id: `item-${nextItemId++}` })));
-                    
-                    // Auto-populate tax
-                    if (typeof data.tax === 'number' && data.tax > 0) {
-                        taxInput.value = data.tax.toFixed(2);
-                        taxTypeDollarBtn.click(); // Programmatically switch to dollar mode
-                    }
-
-                    // Smart Reconciliation
-                    const itemsSum = data.items.reduce((sum, item) => sum + item.price, 0);
-                    const difference = data.subtotal - itemsSum;
-
-                    if (Math.abs(difference) > 0.05) { // Threshold for discrepancy
-                        receiptItems.push({
-                            id: `item-${nextItemId++}`,
-                            item: 'Unrecognized Item',
-                            price: difference,
-                            isReconciliation: true
-                        });
-                        reconciliationNotice.innerHTML = `<strong>Note:</strong> We found a difference of $${difference.toFixed(2)} between the items and the subtotal. We've added it as an "Unrecognized Item".`;
-                        reconciliationNotice.classList.remove('hidden');
-                    }
-
+                if (Array.isArray(parsedJson)) {
+                    receiptItems.push(...parsedJson.map(item => ({ ...item, id: `item-${nextItemId++}` })));
                     displayItems();
                 } else {
                     throw new Error('Received invalid data from server.');
@@ -344,8 +319,7 @@
             receiptItems.forEach(item => {
                 const itemEl = document.createElement('div');
                 itemEl.id = item.id;
-                const bgColor = item.isReconciliation ? 'bg-yellow-100' : 'bg-gray-100';
-                itemEl.className = `draggable-item ${bgColor} p-2 rounded-lg flex justify-between items-center shadow-sm`;
+                itemEl.className = 'draggable-item bg-gray-100 p-2 rounded-lg flex justify-between items-center shadow-sm';
                 itemEl.draggable = true;
                 itemEl.innerHTML = `
                     <div class="flex-grow pr-2">
